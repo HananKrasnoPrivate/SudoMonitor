@@ -65,3 +65,4 @@ The following issues are estimated to be solved during a 3–4 hour window:
 * **Netlink Integration**: The `sudo_monitor_daemon` currently uses the `/proc` tree polling approach only. For real-time monitoring, a Netlink socket connector has to be added to the process tree monitor.
 * **PAM Module**: The PAM module is not ready yet. The communication with the daemon is not implemented and it was not tested.
 * **Go UI**: The Go-based UI monitor currently doesn't communicate with the daemon.
+* **Unit and Integration Tests**: The project lacks comprehensive unit and integration tests to ensure reliability and functionality.
