@@ -1,15 +1,11 @@
 cmake_minimum_required(VERSION 3.10)
 project(SudoAuditSystem CXX)
 
-# 1. Compiler Settings
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Sudo and PAM plugins MUST be Position Independent Code (fPIC)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# 2. Find Dependencies
-# We need PAM headers
 find_library(PAM_LIB pam REQUIRED)
 find_package(Threads REQUIRED)
 
@@ -28,21 +24,20 @@ set_target_properties(sudo_plugin PROPERTIES
     OUTPUT_NAME "plugin"
     PREFIX ""
 )
-# Sudo plugins don't usually need to link against extra libs, 
-# but they need access to sudo_plugin.h if not in standard path.
+
 target_include_directories(sudo_plugin PRIVATE include)
 target_link_libraries(sudo_plugin PRIVATE Threads::Threads)
 
-# 4. PAM Module (pam_module.so)
-add_library(pam_module SHARED
+add_library(pam_custom_module SHARED
         cpp/sudo_pam_module.cpp
+        cpp/uds_socket.cpp
 )
-set_target_properties(pam_module PROPERTIES 
-    OUTPUT_NAME "pam_module"
+set_target_properties(pam_custom_module PROPERTIES
+    OUTPUT_NAME "pam_custom_module"
     PREFIX ""
 )
-target_include_directories(pam_module PRIVATE ${PAM_INCLUDE_DIR})
-target_link_libraries(pam_module PRIVATE ${PAM_LIB})
+target_include_directories(pam_custom_module PRIVATE ${PAM_INCLUDE_DIR})
+target_link_libraries(pam_custom_module PRIVATE ${PAM_LIB} )
 
 add_executable(sudo_daemon
         cpp/sudo_monitor_daemon.cpp

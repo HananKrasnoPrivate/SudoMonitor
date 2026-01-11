@@ -37,11 +37,18 @@ public:
     }
     void onNewData(int fd, const std::string& data) {
         auto msg = parseSudoMsg(data);
-        if (msg.type == SudoMsgType::START_SESSION) {
-            _procTreeMonitor.addRootProc(msg.pid);
-        } else if (msg.type == SudoMsgType::END_SESSION) {
-            _procTreeMonitor.rootProcDied(msg.pid);
+        switch (msg.type) {
+            case SudoMsgType::START_SESSION:
+                _procTreeMonitor.addRootProc(msg.pid());
+                break;
+            case SudoMsgType::END_SESSION:
+                _procTreeMonitor.rootProcDied(msg.pid());
+                break;
+            default:  //TODO: add actions for PAM messages
+                std::cout << "Got message: " << data << std::endl;
+                break;
         }
+
     }
     void runDaemon() {
         _server.init();

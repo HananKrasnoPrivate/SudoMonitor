@@ -25,7 +25,7 @@ void* loadSO(const std::string& path) {
 }
 
 void simulatePAM() {
-    auto pam_handle = loadSO("./pam_module.so");
+    auto pam_handle = loadSO("./pam_custom_module.so");
     auto pam_auth = (pam_func)dlsym(pam_handle, "pam_sm_authenticate");
     if (pam_auth) {
         std::cout << "-> Simulating PAM Authentication Attempt..." << std::endl;
@@ -90,8 +90,8 @@ void simulateSendMsg() {
 int main() {
     std::cout << "Starting Sudo/PAM Plugin Simulator..." << std::endl;
 
-    // simulatePAM();
-    simulateSudo();
+    simulatePAM();
+    // simulateSudo();
     // simulateSendMsg();
     std::cout << "Simulation complete." << std::endl;
 
