@@ -101,7 +101,6 @@ void UdsSocket::serverUpdate() {
 bool UdsSocket::clientSend(const std::string& msg) {
     if (pimpl->_commonFd == -1)
         return false;
-    // MSG_DONTWAIT ensures the call doesn't block if the buffer is full
     ssize_t n = send(pimpl->_commonFd, msg.c_str(), msg.length(), MSG_DONTWAIT);
     return n > 0;
 }

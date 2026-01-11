@@ -22,9 +22,12 @@ public:
         [this](int fd, const std::string& data)->void {
         onNewData(fd, data);
     }),
+    _client(Config::DaemonToMonitorSock, UdsSocket::Mode::CLIENT),
     _procTreeMonitor([this](const ProcessData& data, ProcStatEvent stat)->void {
-
-        logPrefix(std::cout) << "Process: " << data.pid << "; Event: " << stat << "; Props: " << data << std::endl;
+        std::stringstream ss;
+        logPrefix(ss) << "Process: " << data.pid << "; Event: " << stat << "; Props: " << data << std::endl;
+        std::cout << ss.str() << std::endl;
+        _client.clientSend(ss.str());
     })
     {}
     ~Daemon() {
@@ -45,13 +48,20 @@ public:
                 _procTreeMonitor.rootProcDied(msg.pid());
                 break;
             default:  //TODO: add actions for PAM messages
-                logPrefix(std::cout) << "Got message: " << data << std::endl;
+            {
+                std::stringstream ss;
+                logPrefix(ss) << "Got message: " << data << std::endl;
+                std::cout << ss.str() << std::endl;
+                _client.clientSend(ss.str());
+            }
                 break;
         }
 
     }
     void runDaemon() {
         _server.init();
+        _client.init();
+        _client.clientSend("New daemon connection\n");
         _procTreeMonitor.run();
         _running = true;
         while(_running) {
@@ -61,6 +71,7 @@ public:
 private:
     std::atomic_bool _running = false;
     UdsSocket _server;
+    UdsSocket _client;
     ProcTreeMonitor _procTreeMonitor;
 };
 }

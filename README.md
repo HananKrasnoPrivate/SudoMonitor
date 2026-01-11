@@ -10,12 +10,12 @@ SudoAuditSystem intercepts privileged command executions and authentication even
 ## 📂 Project Structure
 * **`cpp/`**: Core implementation logic.
     * `sudo_plugin.cpp`: Sudo I/O plugin for intercepting command data.
-    * `sudo_pam_module.cpp`: PAM module for tracking auth attempts (is not ready yet).
+    * `sudo_pam_module.cpp`: PAM module for tracking auth attempts .
     * `sudo_monitor_daemon.cpp`: Centralized collection service.
     * `monitor_subprocesses.cpp`: Background monitoring of process lifecycles.
     * `uds_socket.cpp`: Inter-process communication via Unix Domain Sockets.
     * `simulator.cpp`: Test utility to simulate events without system-wide changes.
-* **`go/`**: Supplementary tools and real-time UI dashboards (Is not ready yet).
+* **`go/`**: Supplementary tools and real-time UI dashboards (currently just prints the forwarded messages).
 * **`CMakeLists.txt`**: Build configuration.
 * **`build.sh` / `test.sh`**: Automation scripts for building and validation.
 
@@ -62,7 +62,4 @@ In parallel, run the `sudo_monitor_daemon` from the build directory. After that,
 
 ## 📅 Opened Issues (Planned for Sunday)
 The following issues are estimated to be solved during a 3–4 hour window:
-* **Netlink Integration**: The `sudo_monitor_daemon` currently uses the `/proc` tree polling approach only. For real-time monitoring, a Netlink socket connector has to be added to the process tree monitor.
-* **PAM Module**: The PAM module is not ready yet. The communication with the daemon is not implemented and it was not tested.
-* **Go UI**: The Go-based UI monitor currently doesn't communicate with the daemon.
 * **Unit and Integration Tests**: The project lacks comprehensive unit and integration tests to ensure reliability and functionality.

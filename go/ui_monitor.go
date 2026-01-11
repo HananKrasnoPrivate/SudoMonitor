@@ -1,131 +1,89 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"net"
 	"os"
-	"strings"
-
-	"github.com/charmbracelet/bubbles/table"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
-var baseStyle = lipgloss.NewStyle().
-	BorderStyle(lipgloss.NormalBorder()).
-	BorderForeground(lipgloss.Color("240"))
-
-type auditMsg string
-
-type model struct {
-	table    table.Model
-	socket   *net.UnixConn
-}
-
-// Listen for data from the Unix Socket
-func waitForActivity(sub chan auditMsg, conn *net.UnixConn) {
-	buf := make([]byte, 4096)
-	for {
-		n, _, err := conn.ReadFromUnix(buf)
-		if err != nil {
-			continue
-		}
-		sub <- auditMsg(string(buf[:n]))
+// StartSocketServer listens for audit events from the C++ components
+func StartSocketServer(socketPath string) error {
+	// 1. Cleanup old socket file if it exists
+	if _, err := os.Stat(socketPath); err == nil {
+		os.Remove(socketPath)
 	}
-}
 
-func (m model) Init() tea.Cmd {
-	return nil
-}
-
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "q", "ctrl+c":
-			return m, tea.Quit
-		}
-	case auditMsg:
-		// Logic to parse the string: "TYPE|USER|DATA"
-		parts := strings.Split(string(msg), "|")
-		if len(parts) < 3 {
-			parts = []string{"UNKNOWN", "SYSTEM", string(msg)}
-		}
-
-		row := table.Row{parts[0], parts[1], parts[2]}
-		rows := m.table.Rows()
-		rows = append(rows, row)
-		if len(rows) > 15 { // Keep only last 15 entries
-			rows = rows[1:]
-		}
-		m.table.SetRows(rows)
-	}
-	return m, nil
-}
-
-func (m model) View() string {
-	return "\n 🛡️  SUDO AUDIT REAL-TIME MONITOR (Press 'q' to quit)\n\n" +
-		baseStyle.Render(m.table.View()) + "\n"
-}
-
-func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: ./ui_monitor /path/to/socket")
-		os.Exit(1)
-	}
-	socketPath := os.Args[1]
-
-	// 1. Set up the Unix Socket
-	_ = os.Remove(socketPath) // Clean up if exists
-	addr, _ := net.ResolveUnixAddr("unixgram", socketPath)
-	conn, err := net.ListenUnixgram("unixgram", addr)
+	// 2. Start listening (using "unix" for STREAM or "unixgram" for DATAGRAM)
+	listener, err := net.Listen("unix", socketPath)
 	if err != nil {
-		fmt.Printf("Error listening: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to listen on socket: %w", err)
 	}
-	// Important: Allow the sudo plugin (root) to write to the socket
-	os.Chmod(socketPath, 0666)
 
-	// 2. Initialize Table
-	columns := []table.Column{
-		{Title: "Event", Width: 10},
-		{Title: "User", Width: 10},
-		{Title: "Information", Width: 50},
-	}
-	t := table.New(
-		table.WithColumns(columns),
-		table.WithFocused(true),
-		table.WithHeight(15),
-	)
+	// 3. Set permissions so the C++ PAM module (root) and UI can both access it
+	os.Chmod(socketPath, 0777)
 
-	s := table.DefaultStyles()
-	s.Header = s.Header.
-		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("240")).
-		BorderBottom(true).
-		Bold(false)
-	s.Selected = s.Selected.
-		Foreground(lipgloss.Color("229")).
-		Background(lipgloss.Color("57")).
-		Bold(false)
-	t.SetStyles(s)
-
-	// 3. Start UI and Background Listener
-	sub := make(chan auditMsg)
-	go waitForActivity(sub, conn)
-
-	p := tea.NewProgram(model{table: t, socket: conn})
-
-	// Bridge the Go channel to BubbleTea updates
 	go func() {
+		defer listener.Close()
 		for {
-			m := <-sub
-			p.Send(m)
+			// Accept new connection
+			conn, err := listener.Accept()
+			if err != nil {
+				fmt.Printf("Accept error: %v\n", err)
+				continue
+			}
+
+			// Handle the connection in a separate goroutine
+			go handleConnection(conn)
 		}
 	}()
 
-	if _, err := p.Run(); err != nil {
-		fmt.Printf("UI Error: %v", err)
-		os.Exit(1)
+	return nil
+}
+
+func handleConnection(conn net.Conn) {
+	defer conn.Close()
+	fmt.Printf("New client connected: %s\n", conn.RemoteAddr())
+
+	// Use a scanner to read messages line by line
+	scanner := bufio.NewScanner(conn)
+	for scanner.Scan() {
+		message := scanner.Text()
+
+		// 💡 This is where you trigger your Go UI updates
+		processIncomingMessage(message)
 	}
+
+	if err := scanner.Err(); err != nil {
+		fmt.Printf("Socket read error: %v\n", err)
+	}
+}
+
+func processIncomingMessage(msg string) {
+	// For your Sunday Sprint: just print it to verify communication
+	fmt.Printf("[AUDIT EVENT]: %s\n", msg)
+}
+
+
+func main() {
+    socketPath := "/tmp/ui_monitor.sock"
+    fmt.Println("🚀 Starting SudoMonitor Go Bridge...")
+
+    // This channel is the bridge
+    messages := make(chan string, 10)
+
+    // Pass the channel to the server
+    err := StartSocketServer(socketPath)
+    if err != nil {
+       fmt.Printf("❌ Critical Error: %v\n", err)
+       os.Exit(1)
+    }
+
+    fmt.Printf("📍 Listening on UDS: %s\n", socketPath)
+
+    // The Main Event Loop (remove 'go' if this is the only thing running,
+    // otherwise the program will exit immediately!)
+    for msg := range messages {
+        fmt.Printf("🔔 New Audit Event: %s\n", msg)
+    }
 }

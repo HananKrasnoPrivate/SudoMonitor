@@ -81,7 +81,7 @@ void simulateSudo() {
 
 
 void simulateSendMsg() {
-    SudoMonitor::UdsSocket client(SudoMonitor::Config::SudoToDaemonSock, SudoMonitor::UdsSocket::Mode::CLIENT);
+    SudoMonitor::UdsSocket client(SudoMonitor::Config::DaemonToMonitorSock, SudoMonitor::UdsSocket::Mode::CLIENT);
     client.init();
     client.clientSend("Hello from the client!");
     SLEEP_MS(1000);
@@ -91,8 +91,8 @@ int main() {
     std::cout << "Starting Sudo/PAM Plugin Simulator..." << std::endl;
 
     // simulatePAM();
-    simulateSudo();
-    // simulateSendMsg();
+    // simulateSudo();
+    simulateSendMsg();
     std::cout << "Simulation complete." << std::endl;
 
     return 0;
