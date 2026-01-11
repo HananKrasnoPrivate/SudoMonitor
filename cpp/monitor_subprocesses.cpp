@@ -197,6 +197,13 @@ struct ProcTreeMonitor::Impl {
         const auto props = statToProcList(std::to_string(node.pid()));
         createUpdateProcessData(node.processData, statToProcList(std::to_string(node.pid())));
     }
+    void triggerUpdateTree() {
+        {
+            std::lock_guard<std::mutex> lock(_mtx);
+            _eventTriggered = true;
+        }
+        _cv.notify_one();
+    }
     void syncNode(Node& node) {
         syncActiveState(node);
         if (node.active() && node.orphan()) {
@@ -277,12 +284,8 @@ struct ProcTreeMonitor::Impl {
                             // pid_t ppid = ev->event_data.fork.parent_pid;
                             // pid_t cpid = ev->event_data.fork.child_pid;
                             // std::cout << "Netlink: Fork event detected, parent: " << ppid << ", child: " << cpid << std::endl;
-                            {
-                                std::lock_guard<std::mutex> lock(_mtx);
-                                _eventTriggered = true;
-                            }
-                            _cv.notify_one();
                         }
+                            triggerUpdateTree();
                             break;
                         case proc_event::PROC_EVENT_EXEC: {
                             auto cmd = readProcFile(ev->event_data.exec.process_tgid, "cmdline");
@@ -333,16 +336,21 @@ ProcTreeMonitor::ProcTreeMonitor(const OnProcStatChange& cb)
 ProcTreeMonitor::~ProcTreeMonitor() = default;
 
 void ProcTreeMonitor::addRootProc(pid_t pid) {
-    std::lock_guard<std::mutex> lock(pimpl->_mtx);
-    if (pimpl->_processTrees.find(pid) == pimpl->_processTrees.end()) {
-        Node root(pid);
-        pimpl->syncProcessData(root);
-        if (pimpl->_onProcStatChange)
-            pimpl->_onProcStatChange(root.processData, Created);
-        pimpl->_processTrees.emplace(pid, root);
-    } else {
-        //TODO: error handling
+    {
+        std::lock_guard<std::mutex> lock(pimpl->_mtx);
+        if (pimpl->_processTrees.find(pid) == pimpl->_processTrees.end()) {
+            Node root(pid);
+            pimpl->syncProcessData(root);
+            if (pimpl->_onProcStatChange)
+                pimpl->_onProcStatChange(root.processData, Created);
+            pimpl->_processTrees.emplace(pid, root);
+
+        } else {
+            //TODO: error handling
+            return;
+        }
     }
+    pimpl->triggerUpdateTree();
 }
 
 void ProcTreeMonitor::rootProcDied(pid_t pid) {

@@ -2,4 +2,4 @@
 echo "ls..."
 ls
 echo "Create a directory in /opt (requires root privileges)..."
-./test1.sh
+sleep 1
