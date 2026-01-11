@@ -24,7 +24,7 @@ public:
     }),
     _procTreeMonitor([this](const ProcessData& data, ProcStatEvent stat)->void {
 
-        std::cout << "Process: " << data.pid << "; Event: " << stat << "; Props: " << data << std::endl;
+        logPrefix(std::cout) << "Process: " << data.pid << "; Event: " << stat << "; Props: " << data << std::endl;
     })
     {}
     ~Daemon() {
@@ -45,7 +45,7 @@ public:
                 _procTreeMonitor.rootProcDied(msg.pid());
                 break;
             default:  //TODO: add actions for PAM messages
-                std::cout << "Got message: " << data << std::endl;
+                logPrefix(std::cout) << "Got message: " << data << std::endl;
                 break;
         }
 

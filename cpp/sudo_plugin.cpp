@@ -37,7 +37,9 @@ void logToFile(const char *fmt, ...) {
     fflush(log_file);
 
 }
-#define LOG(level, fmt, ...)  if (log_printf) log_printf(level, fmt "\n", ##__VA_ARGS__); logToFile(fmt, ##__VA_ARGS__)
+#define LOG(level, fmt, ...)  if (log_printf) \
+    log_printf(level, "%s " fmt , SudoMonitor::getLogTime().c_str(), ##__VA_ARGS__); \
+    logToFile( "%s " fmt, SudoMonitor::getLogTime().c_str(), ##__VA_ARGS__)
 
 
 #define LOG_INFO(fmt, ...) LOG(SUDO_CONV_INFO_MSG,  "[INFO] " fmt "\n", ##__VA_ARGS__)

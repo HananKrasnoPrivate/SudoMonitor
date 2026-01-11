@@ -1,4 +1,5 @@
 #include "monitor_subprocesses.h"
+#include "common.h"
 
 #include <iostream>
 #include <vector>
@@ -10,10 +11,15 @@
 #include <dirent.h>
 #include <algorithm>
 #include <atomic>
+#include <condition_variable>
 #include <sstream>
-#include <signal.h>
+#include <csignal>
+#include <unistd.h>
+#include <linux/netlink.h>
+#include <linux/connector.h>
+#include <linux/cn_proc.h>
+#include <sys/socket.h>
 
-#include "common.h"
 
 namespace SudoMonitor {
 namespace { //namespace for local helpers
@@ -160,16 +166,23 @@ ProcList getChildrenFromOS(pid_t ppid) {
 }
 
 struct ProcTreeMonitor::Impl {
+    const std::chrono::milliseconds TreeUpdateTimeout{5};
     std::map<pid_t, Node> _processTrees;
     OnProcStatChange _onProcStatChange;
-    std::thread _worker;
+    std::thread _treeUpdateWorker;
+    std::thread _netLinkWorker;
     std::mutex _mtx;
     std::atomic<bool> _running{false};
+    std::condition_variable _cv;
+    bool _eventTriggered = false;
 
     explicit Impl(const OnProcStatChange& cb) : _onProcStatChange(cb) {}
     ~Impl() {
         _running = false;
-        if (_worker.joinable()) _worker.join();
+        if (_treeUpdateWorker.joinable())
+            _treeUpdateWorker.join();
+        if (_netLinkWorker.joinable())
+            _netLinkWorker.join();
     }
     void syncActiveState(Node& node) {
         if (!node.active())
@@ -214,12 +227,90 @@ struct ProcTreeMonitor::Impl {
             }
         }
     }
+    int nl_open() {
+        int s = socket(PF_NETLINK, SOCK_DGRAM, NETLINK_CONNECTOR);
+        if (s < 0) { perror("socket"); return -1; }
+        sockaddr_nl sa = { .nl_family = AF_NETLINK, .nl_pid = static_cast<uint>(getpid()) , .nl_groups = CN_IDX_PROC};
+        if (bind(s, (sockaddr*)&sa, sizeof(sa)) < 0) { perror("bind"); close(s); return -1; }
+        // subscribe
+        struct Req {
+            struct nlmsghdr nlh;
+            struct cn_msg   cn;
+            enum proc_cn_mcast_op op;
+        };
+        Req req;
+        req.nlh.nlmsg_len = sizeof(req);
+        req.nlh.nlmsg_pid = static_cast<uint32_t>(getpid());
+        req.nlh.nlmsg_type = NLMSG_DONE;
+
+        req.cn.id.idx = CN_IDX_PROC;
+        req.cn.id.val = CN_VAL_PROC;
+        req.cn.len = sizeof(enum proc_cn_mcast_op);
+
+        req.op = PROC_CN_MCAST_LISTEN;
+        if (send(s, &req, sizeof(req), 0) < 0) { perror("send"); close(s); return -1; }
+        return s;
+    }
+
+    void runNetLinkLoop() {
+        try {
+            int s = nl_open();
+            if (s < 0)
+                return;
+            unsigned char buf[4096];
+            while (_running) {
+                ssize_t n = recv(s, buf, sizeof(buf), 0);
+                if (n <= 0) {
+                    if (errno == EINTR)
+                        continue;
+                    perror("recv");
+                    break;
+                }
+
+                nlmsghdr *nlh = (struct nlmsghdr*)buf;
+                for (; NLMSG_OK(nlh, n); nlh = NLMSG_NEXT(nlh, n)) {
+                    cn_msg *cn = (struct cn_msg*)NLMSG_DATA(nlh);
+                    proc_event *ev = (struct proc_event*)cn->data;
+
+                    switch (ev->what) {
+                        case proc_event::PROC_EVENT_FORK: {
+                            // pid_t ppid = ev->event_data.fork.parent_pid;
+                            // pid_t cpid = ev->event_data.fork.child_pid;
+                            // std::cout << "Netlink: Fork event detected, parent: " << ppid << ", child: " << cpid << std::endl;
+                            {
+                                std::lock_guard<std::mutex> lock(_mtx);
+                                _eventTriggered = true;
+                            }
+                            _cv.notify_one();
+                        }
+                            break;
+                        case proc_event::PROC_EVENT_EXEC: {
+                            auto cmd = readProcFile(ev->event_data.exec.process_tgid, "cmdline");
+                            // logPrefix(std::cout) << "Netlink: exec event detected, pid: " << ev->event_data.exec.process_tgid << ", cmd: " << cmd << std::endl;
+
+                            break;
+                        }
+                        case proc_event::PROC_EVENT_EXIT:
+                            // logPrefix(std::cout) << "Netlink: exit event detected, pid: " << ev->event_data.exit.process_tgid << std::endl;
+                            break;
+                        default: break;
+                    }
+                }
+            }
+            close(s);
+        } catch (const std::exception& e) {
+            std::cerr << "Netlink error: " << e.what() << std::endl;
+        }
+    }
     void run() {
         _running = true;
-        _worker = std::thread([this]() {
+        _netLinkWorker = std::thread([this] { runNetLinkLoop(); });
+        _treeUpdateWorker = std::thread([this]() {
             while (_running) {
-                {
-                    std::lock_guard<std::mutex> lock(_mtx);
+                std::unique_lock<std::mutex> lock(_mtx);
+                _cv.wait_for(lock, TreeUpdateTimeout, [this] {
+                    return !_running || _eventTriggered;
+                });
                     for (auto it = _processTrees.begin(); it != _processTrees.end();) {
                         const auto& [pid, node] = *it;
                         syncNode(it->second);
@@ -232,8 +323,6 @@ struct ProcTreeMonitor::Impl {
                         }
                     }
                 }
-                SLEEP_MS(1);
-            }
         });
     }
 };

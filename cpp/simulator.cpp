@@ -90,8 +90,8 @@ void simulateSendMsg() {
 int main() {
     std::cout << "Starting Sudo/PAM Plugin Simulator..." << std::endl;
 
-    simulatePAM();
-    // simulateSudo();
+    // simulatePAM();
+    simulateSudo();
     // simulateSendMsg();
     std::cout << "Simulation complete." << std::endl;
 
